@@ -3,6 +3,7 @@ package com.shopwise.app;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,33 +13,38 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shopwise.app.dto.request.CreateSaleRequest;
-import com.shopwise.app.dto.request.SaleItemRequest;
 import com.shopwise.app.dto.response.SaleItemResponse;
 import com.shopwise.app.dto.response.SaleResponse;
 import com.shopwise.app.service.SaleService;
 
 @SpringBootTest
-@AutoConfigureMockMvc
 class SaleControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private WebApplicationContext context;
 
     @MockitoBean
     private SaleService saleService;
+
+    @BeforeEach
+    void setup() {
+        mockMvc = MockMvcBuilders
+            .webAppContextSetup(context)
+            .apply(springSecurity())
+            .build();
+    }
 
     private SaleResponse fakeSale() {
         SaleItemResponse item = new SaleItemResponse();
@@ -58,19 +64,16 @@ class SaleControllerTest {
 
     @Test
     void createSale_admin_ok() throws Exception {
-        SaleItemRequest itemReq = new SaleItemRequest();
-        itemReq.setProductId(1L);
-        itemReq.setQuantity(2);
-
-        CreateSaleRequest req = new CreateSaleRequest();
-        req.setItems(List.of(itemReq));
-
         when(saleService.create(any())).thenReturn(fakeSale());
+
+        String body = """
+            {"items":[{"productId":1,"quantity":2}]}
+            """;
 
         mockMvc.perform(post("/api/sales")
                 .with(httpBasic("admin", "shopwise123"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(req)))
+                .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(1))
             .andExpect(jsonPath("$.total").value(1999.98));
@@ -78,28 +81,23 @@ class SaleControllerTest {
 
     @Test
     void createSale_user_forbidden() throws Exception {
-        CreateSaleRequest req = new CreateSaleRequest();
-        SaleItemRequest item = new SaleItemRequest();
-        item.setProductId(1L);
-        item.setQuantity(1);
-        req.setItems(List.of(item));
+        String body = """
+            {"items":[{"productId":1,"quantity":1}]}
+            """;
 
         mockMvc.perform(post("/api/sales")
                 .with(httpBasic("user", "user123"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(req)))
+                .content(body))
             .andExpect(status().isForbidden());
     }
 
     @Test
     void createSale_emptyItems_badRequest() throws Exception {
-        CreateSaleRequest req = new CreateSaleRequest();
-        req.setItems(List.of());
-
         mockMvc.perform(post("/api/sales")
                 .with(httpBasic("admin", "shopwise123"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(req)))
+                .content("{\"items\":[]}"))
             .andExpect(status().isBadRequest());
     }
 
